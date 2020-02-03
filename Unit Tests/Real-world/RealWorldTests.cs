@@ -1,5 +1,7 @@
 ﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Jurassic;
+using System;
+using System.Diagnostics;
 
 namespace UnitTests
 {
@@ -57,11 +59,15 @@ namespace UnitTests
         {
             // From http://phpjs.org/functions/sprintf
             var engine = new ScriptEngine();
-            engine.ExecuteFile(@"..\..\..\Real-world\Files\sprintf.js");
-            Assert.AreEqual("123.10", engine.Evaluate("sprintf('%01.2f', 123.1)"));
+            engine.SetGlobalFunction("import", new Action<string>((filePath)=> {
+                var path = filePath.Replace("\"", "");
+                engine.ExecuteFile(@"..\..\..\" + path);
+            }));
+            engine.ExecuteFile(@"..\..\..\Real-world\Files\import_test.js");
             Assert.AreEqual("[    monkey]", engine.Evaluate("sprintf('[%10s]', 'monkey')"));
-            Assert.AreEqual("[####monkey]", engine.Evaluate("sprintf(\"[%'#10s]\", 'monkey')"));
         }
+
+
 
         [TestMethod]
         public void MD5()

@@ -70,6 +70,7 @@ namespace Jurassic.Compiler
         public readonly static PunctuatorToken CompoundBitwiseOr = new PunctuatorToken("|=");
         public readonly static PunctuatorToken CompoundBitwiseXor = new PunctuatorToken("^=");
         public readonly static PunctuatorToken CompoundExponentiation = new PunctuatorToken("**=");
+        public readonly static PunctuatorToken NewLine = new PunctuatorToken("\n");
 
         // These are treated specially by the lexer.
         public readonly static PunctuatorToken Dot = new PunctuatorToken(".");

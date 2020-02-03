@@ -447,6 +447,8 @@ namespace Jurassic.Compiler
                 return ParseDebugger();
             if (this.nextToken == KeywordToken.Function)
                 return ParseFunctionDeclaration();
+            if (this.nextToken == KeywordToken.Import)
+                return ParseLabelOrExpressionStatement(true);
             if (this.nextToken == null)
                 throw new SyntaxErrorException("Unexpected end of input", this.LineNumber, this.SourcePath);
 
@@ -1289,10 +1291,11 @@ namespace Jurassic.Compiler
         /// <param name="functionName"> The name of the function (can be empty). </param>
         /// <param name="startPosition"> The position of the start of the function. </param>
         /// <returns> A function expression. </returns>
-        private FunctionExpression ParseFunction(FunctionDeclarationType functionType, Scope parentScope, string functionName, SourceCodePosition startPosition)
+        private FunctionExpression ParseFunction(FunctionDeclarationType functionType, Scope parentScope, string functionName, SourceCodePosition startPosition, bool hasParanthesis = true)
         {
             // Read the left parenthesis.
-            this.Expect(PunctuatorToken.LeftParenthesis);
+            if(hasParanthesis)
+                this.Expect(PunctuatorToken.LeftParenthesis);
 
             // Create a new scope and assign variables within the function body to the scope.
             bool includeNameInScope = functionType != FunctionDeclarationType.Getter && functionType != FunctionDeclarationType.Setter;
@@ -1306,7 +1309,15 @@ namespace Jurassic.Compiler
             this.currentVarScope = scope;
 
             // Read zero or more arguments.
-            var arguments = ParseFunctionArguments(PunctuatorToken.RightParenthesis);
+            List<FunctionArgument> arguments = null;
+            if (hasParanthesis)
+            {
+                arguments = ParseFunctionArguments(PunctuatorToken.RightParenthesis);
+            }
+            else
+            {
+                arguments = ParseFunctionArguments(PunctuatorToken.NewLine);
+            }
 
             // Restore scope and methodOptimizationHints.
             this.methodOptimizationHints = originalMethodOptimizationHints;
@@ -1321,7 +1332,8 @@ namespace Jurassic.Compiler
                 throw new SyntaxErrorException("Setters must have a single argument", this.LineNumber, this.SourcePath);
 
             // Read the right parenthesis.
-            this.Expect(PunctuatorToken.RightParenthesis);
+            if(hasParanthesis)
+                this.Expect(PunctuatorToken.RightParenthesis);
 
             // Since the parser reads one token in advance, start capturing the function body here.
             var bodyTextBuilder = new System.Text.StringBuilder();
@@ -1428,13 +1440,35 @@ namespace Jurassic.Compiler
         /// cases are disambiguated here.
         /// </summary>
         /// <returns> A statement. </returns>
-        private Statement ParseLabelOrExpressionStatement()
+        private Statement ParseLabelOrExpressionStatement(bool isImportSpecialCase = false)
         {
             // Keep track of the start of the statement so that source debugging works correctly.
             var start = this.PositionAfterWhitespace;
 
-            // Parse the statement as though it was an expression - but stop if there is an unexpected colon.
-            var expression = ParseExpression(PunctuatorToken.Semicolon, PunctuatorToken.Colon);
+            Expression expression = null;
+            if (isImportSpecialCase)
+            {
+                this.Expect(KeywordToken.Import);
+
+                var expression2 = ParseExpression(PunctuatorToken.Semicolon, PunctuatorToken.Colon);
+
+                // If the token is an identifier, convert it to a NameExpression.
+                var nameExpression = new NameExpression(this.currentVarScope, "import");
+                var functionOperator = OperatorFromToken(PunctuatorToken.LeftParenthesis, true);
+                var newExp = OperatorExpression.FromOperator(functionOperator);
+                newExp.Push(nameExpression);
+                newExp.Push(expression2);
+                // Record each occurance of a variable name.
+                this.methodOptimizationHints.EncounteredVariable("import");
+
+
+                expression = newExp;
+            }
+            else
+            {
+                // Parse the statement as though it was an expression - but stop if there is an unexpected colon.
+                expression = ParseExpression(PunctuatorToken.Semicolon, PunctuatorToken.Colon);
+            }
 
             if (this.nextToken == PunctuatorToken.Colon && expression is NameExpression)
             {
@@ -1647,8 +1681,12 @@ namespace Jurassic.Compiler
                          this.nextToken is KeywordToken ||
                         (this.nextToken is TemplateLiteralToken && this.expressionState == ParserExpressionState.Operator))
                 {
+                    Operator newOperator = null;
+                    if (this.nextToken == KeywordToken.Import)
+                        newOperator = Operator.FunctionCall;
                     // The token is an operator (o1).
-                    Operator newOperator = OperatorFromToken(this.nextToken, postfixOrInfix: this.expressionState == ParserExpressionState.Operator);
+                    else
+                        newOperator = OperatorFromToken(this.nextToken, postfixOrInfix: this.expressionState == ParserExpressionState.Operator);
 
                     // Make sure the token is actually an operator and not just a random keyword.
                     if (newOperator == null)
@@ -2105,7 +2143,7 @@ namespace Jurassic.Compiler
         {
             // Record the start of the function.
             var startPosition = this.PositionAfterWhitespace;
-
+           
             // Consume the function keyword.
             this.Expect(KeywordToken.Function);
 
@@ -2116,9 +2154,8 @@ namespace Jurassic.Compiler
                 functionName = this.ExpectIdentifier();
                 ValidateVariableName(functionName);
             }
-
             // Parse the rest of the function.
-            return ParseFunction(FunctionDeclarationType.Expression, this.currentVarScope, functionName, startPosition);
+            return ParseFunction(FunctionDeclarationType.Expression, this.currentVarScope, functionName, startPosition);         
         }
 
         /// <summary>
